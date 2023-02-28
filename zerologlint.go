@@ -19,7 +19,8 @@ var Analyzer = &analysis.Analyzer{
 
 func run(pass *analysis.Pass) (interface{}, error) {
 	for _, f := range pass.Files {
-		if !hasZerologImport(f) {
+		has, name := checkZerologImport(f)
+		if !has {
 			continue
 		}
 
@@ -29,7 +30,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		}
 		inspector.Preorder(exprFilter, func(n ast.Node) {
 			es, _ := n.(*ast.ExprStmt)
-			if has := hasLogIdent(es); has {
+			if has := hasLogIdent(es, name); has {
 				if has := hasMsg(es); !has {
 					pass.Reportf(n.Pos(), "missing Msg or Send call for zerolog log method")
 				}
@@ -39,20 +40,24 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
-func hasZerologImport(f *ast.File) bool {
+func checkZerologImport(f *ast.File) (bool, string) {
 	for _, imp := range f.Imports {
 		if imp.Path.Value == `"github.com/rs/zerolog/log"` {
-			return true
+			if imp.Name == nil {
+				// no alias
+				return true, "log"
+			}
+			return true, imp.Name.Name
 		}
 	}
-	return false
+	return false, ""
 }
 
-func hasLogIdent(es *ast.ExprStmt) bool {
+func hasLogIdent(es *ast.ExprStmt, name string) bool {
 	has := false
 	ast.Inspect(es, func(n ast.Node) bool {
 		if ident, ok := n.(*ast.Ident); ok {
-			if ident.Name == "log" {
+			if ident.Name == name {
 				has = true
 				return false
 			}

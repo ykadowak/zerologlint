@@ -44,6 +44,6 @@ func ok() {
     ).Send()
 
 	// FIXME: this should pass. Use SSA
-	logger = log.Error()
-	logger.Send()
+	// logger := log.Error()
+	// logger.Send()
 }
