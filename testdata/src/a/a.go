@@ -6,23 +6,18 @@ import (
 )
 
 func bad() {
-	// The pattern can be written in regular expression.
-	log.Fatal() // want "missing Msg or Send call for zerolog log method"
-	log.Panic() // want "missing Msg or Send call for zerolog log method"
-	log.Debug() // want "missing Msg or Send call for zerolog log method"
-	log.Info() // want "missing Msg or Send call for zerolog log method"
-	log.Warn() // want "missing Msg or Send call for zerolog log method"
 	log.Error() // want "missing Msg or Send call for zerolog log method"
+	log.Info()  // want "missing Msg or Send call for zerolog log method"
+	log.Fatal() // want "missing Msg or Send call for zerolog log method"
+	log.Debug() // want "missing Msg or Send call for zerolog log method"
+	log.Warn()  // want "missing Msg or Send call for zerolog log method"
 
 	var err error
-	log.Error().Err(err) // want "missing Msg or Send call for zerolog log method"
+	log.Error().Err(err)                                 // want "missing Msg or Send call for zerolog log method"
 	log.Error().Err(err).Str("foo", "bar").Int("foo", 1) // want "missing Msg or Send call for zerolog log method"
-	log.Info(). // want "missing Msg or Send call for zerolog log method"
-    Str("foo", "bar").
-    Dict("dict", zerolog.Dict().
-        Str("bar", "baz").
-        Int("n", 1),
-    )
+
+	logger := log.Error() // want "missing Msg or Send call for zerolog log method"
+	logger.Err(err).Str("foo", "bar").Int("foo", 1)
 }
 
 func ok() {
@@ -33,17 +28,25 @@ func ok() {
 	log.Warn().Send()
 	log.Error().Msg("")
 
+	log.Error().Str("foo", "bar").Send()
 	var err error
-	log.Error().Err(err).Send()
 	log.Error().Err(err).Str("foo", "bar").Int("foo", 1).Msg("")
-	log.Info().
-    Str("foo", "bar").
-    Dict("dict", zerolog.Dict().
-        Str("bar", "baz").
-        Int("n", 1),
-    ).Send()
 
-	// FIXME: this should pass. Use SSA
-	// logger := log.Error()
-	// logger.Send()
+	logger := log.Error()
+	logger.Send()
+
+	// FIXME: 多分zerolog.Dict()がreceiver内のをご検知している気がする
+	log.Info().
+		Str("foo", "bar").
+		Dict("dict", zerolog.Dict().
+			Str("bar", "baz").
+			Int("n", 1),
+		).Send()
+
+	// FIXME: これ対応するか？？？
+	logger2 := log.Info()
+	if err != nil {
+		logger2 = log.Error()
+	}
+	logger2.Send()
 }

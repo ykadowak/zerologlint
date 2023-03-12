@@ -1,80 +1,109 @@
 package zerologlint
 
 import (
-	"go/ast"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/go/analysis/passes/buildssa"
+	"golang.org/x/tools/go/ssa"
+
+	"github.com/gostaticanalysis/comment/passes/commentmap"
 )
 
 var Analyzer = &analysis.Analyzer{
-	Name: "zerologlint",
-	Doc:  "check that zerolog log methods have a final Msg call",
+	Name: "zerologlinter",
+	Doc:  "finds cases where zerolog methods are not followed by Msg or Send",
 	Run:  run,
 	Requires: []*analysis.Analyzer{
-		inspect.Analyzer,
+		buildssa.Analyzer,
+		commentmap.Analyzer,
 	},
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
-	for _, f := range pass.Files {
-		has, name := checkZerologImport(f)
-		if !has {
-			continue
-		}
+	srcFuncs := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA).SrcFuncs
 
-		inspector := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-		exprFilter := []ast.Node{
-			(*ast.ExprStmt)(nil),
-		}
-		inspector.Preorder(exprFilter, func(n ast.Node) {
-			es, _ := n.(*ast.ExprStmt)
-			if has := hasLogIdent(es, name); has {
-				if has := hasMsg(es); !has {
-					pass.Reportf(n.Pos(), "missing Msg or Send call for zerolog log method")
+	// This map holds all the ssa block that is a zerolog.Event type instance.
+	// Everytime the zerolog.Event is dispatched with Msg() or Send(),
+	// deletes that block from this map.
+	// At the end, check if the set is empty, or report the not dispatched block.
+	set := make(map[ssa.Value]struct{})
+
+	for _, sf := range srcFuncs {
+		for _, b := range sf.Blocks {
+			for _, instr := range b.Instrs {
+				if c, ok := instr.(*ssa.Call); ok {
+					v := c.Value()
+					if isZerologEvent(c.Type().String()) {
+						// check if this is a new instance of zerolog.Event like logger := log.Error()
+						// which should be dispatched afterwards at some point
+						// FIXME: ??? zerolog.Dict()もzerolog.Eventインスタンスを生成するので区別必要
+						// zerolog.Dict()の意味をあまり理解できていない
+						if len(v.Call.Args) == 0 {
+							set[c.Value()] = struct{}{}
+						}
+						continue
+					}
+
+					// if the call does not return zerolog.Event,
+					// check if the base is zerolog.Event.
+					// if so, check if the StaticCallee is Send() or Msg().
+					// if so, remove the arg[0] from the set.
+					for _, arg := range v.Call.Args {
+						if isZerologEvent(arg.Type().String()) {
+							if isDispatchMethod(c) {
+								val := getRootSsaValue(arg)
+								delete(set, val)
+							}
+						}
+					}
 				}
 			}
-		})
+		}
+	}
+	// At the end, if the set is clear -> ok.
+	// if the set is not clear -> there must be a left zerolog.Event var that weren't dispached.
+	// -> Report it using position.
+	for k := range set {
+		pass.Reportf(k.Pos(), "missing Msg or Send call for zerolog log method")
 	}
 	return nil, nil
 }
 
-func checkZerologImport(f *ast.File) (bool, string) {
-	for _, imp := range f.Imports {
-		if imp.Path.Value == `"github.com/rs/zerolog/log"` {
-			if imp.Name == nil {
-				// no alias
-				return true, "log"
-			}
-			return true, imp.Name.Name
-		}
+func isZerologEvent(typeStr string) bool {
+	t := removeVendor(typeStr)
+	return t == "github.com/rs/zerolog.Event"
+}
+
+// RemoVendor removes vendoring information from import path.
+func removeVendor(path string) string {
+	i := strings.Index(path, "vendor/")
+	if i >= 0 {
+		return path[i+len("vendor/"):]
 	}
-	return false, ""
+	return path
 }
 
-func hasLogIdent(es *ast.ExprStmt, name string) bool {
-	has := false
-	ast.Inspect(es, func(n ast.Node) bool {
-		if ident, ok := n.(*ast.Ident); ok {
-			if ident.Name == name {
-				has = true
-				return false
-			}
-		}
+func isDispatchMethod(c *ssa.Call) bool {
+	m := c.Common().StaticCallee().Name()
+	if m == "Send" || m == "Msg" {
 		return true
-	})
-	return has
-}
-
-func hasMsg(es *ast.ExprStmt) bool {
-	if ce, ok := es.X.(*ast.CallExpr); ok {
-		if se, ok := ce.Fun.(*ast.SelectorExpr); ok {
-			switch se.Sel.Name {
-			case "Msg", "Msgf", "Send":
-				return true
-			}
-		}
 	}
 	return false
+}
+
+func getRootSsaValue(arg ssa.Value) ssa.Value {
+	if c, ok := arg.(*ssa.Call); ok {
+		v := c.Value()
+		// When there is no receiver, that's the block of zerolog.Event
+		// eg. Error() method in log.Error().Str("foo", "bar"). Send()
+		if len(v.Call.Args) == 0 {
+			return v
+		}
+
+		// Ok to just return the receiver because all the method in this
+		// chain is zerolog.Event at this point.
+		return getRootSsaValue(v.Call.Args[0])
+	}
+	return arg
 }
