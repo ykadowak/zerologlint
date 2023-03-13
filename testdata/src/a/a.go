@@ -44,6 +44,7 @@ func ok() {
 		).Send()
 
 	// FIXME: これ対応するか？？？
+	// phiを扱わないといけない
 	logger2 := log.Info()
 	if err != nil {
 		logger2 = log.Error()

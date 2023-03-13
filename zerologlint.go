@@ -53,7 +53,14 @@ func run(pass *analysis.Pass) (interface{}, error) {
 						if isZerologEvent(arg) {
 							if isDispatchMethod(v) {
 								val := getRootSsaValue(arg)
-								delete(set, val)
+								// if there's branch, remove both ways from the set
+								if phi, ok := val.(*ssa.Phi); ok {
+									for _, edge := range phi.Edges {
+										delete(set, edge)
+									}
+								} else {
+									delete(set, val)
+								}
 							}
 						}
 					}
