@@ -35,7 +35,7 @@ func ok() {
 	logger := log.Error()
 	logger.Send()
 
-	// FIXME: 多分zerolog.Dict()がreceiver内のをご検知している気がする
+	// include zerolog.Dict()
 	log.Info().
 		Str("foo", "bar").
 		Dict("dict", zerolog.Dict().
@@ -43,8 +43,7 @@ func ok() {
 			Int("n", 1),
 		).Send()
 
-	// FIXME: これ対応するか？？？
-	// phiを扱わないといけない
+	// conditional
 	logger2 := log.Info()
 	if err != nil {
 		logger2 = log.Error()
