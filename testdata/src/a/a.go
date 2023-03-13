@@ -18,6 +18,21 @@ func bad() {
 
 	logger := log.Error() // want "missing Msg or Send call for zerolog log method"
 	logger.Err(err).Str("foo", "bar").Int("foo", 1)
+
+	// include zerolog.Dict()
+	log.Info(). // want "missing Msg or Send call for zerolog log method"
+		Str("foo", "bar").
+		Dict("dict", zerolog.Dict().
+			Str("bar", "baz").
+			Int("n", 1),
+		)
+
+	// conditional
+	logger2 := log.Info() // want "missing Msg or Send call for zerolog log method"
+	if err != nil {
+		logger2 = log.Error() // want "missing Msg or Send call for zerolog log method"
+	}
+	logger2.Str("foo", "bar")
 }
 
 func ok() {
