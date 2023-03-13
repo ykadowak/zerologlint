@@ -34,15 +34,15 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			for _, instr := range b.Instrs {
 				if c, ok := instr.(*ssa.Call); ok {
 					v := c.Value()
-					if isZerologEvent(c.Type().String()) {
-						// check if this is a new instance of zerolog.Event like logger := log.Error()
-						// which should be dispatched afterwards at some point
-						// FIXME: ??? zerolog.Dict()もzerolog.Eventインスタンスを生成するので区別必要
-						// zerolog.Dict()の意味をあまり理解できていない
-						if len(v.Call.Args) == 0 {
-							set[c.Value()] = struct{}{}
+					if isInLogPkg(v) {
+						if isZerologEvent(v) {
+							// check if this is a new instance of zerolog.Event like logger := log.Error()
+							// which should be dispatched afterwards at some point
+							if len(v.Call.Args) == 0 {
+								set[v] = struct{}{}
+							}
+							continue
 						}
-						continue
 					}
 
 					// if the call does not return zerolog.Event,
@@ -50,8 +50,8 @@ func run(pass *analysis.Pass) (interface{}, error) {
 					// if so, check if the StaticCallee is Send() or Msg().
 					// if so, remove the arg[0] from the set.
 					for _, arg := range v.Call.Args {
-						if isZerologEvent(arg.Type().String()) {
-							if isDispatchMethod(c) {
+						if isZerologEvent(arg) {
+							if isDispatchMethod(v) {
 								val := getRootSsaValue(arg)
 								delete(set, val)
 							}
@@ -70,8 +70,19 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
-func isZerologEvent(typeStr string) bool {
-	t := removeVendor(typeStr)
+func isInLogPkg(c *ssa.Call) bool {
+	switch v := c.Call.Value.(type) {
+	case ssa.Member:
+		p := removeVendor(v.Package().Pkg.Path())
+		return p == "github.com/rs/zerolog/log"
+	default:
+		return false
+	}
+}
+
+func isZerologEvent(c ssa.Value) bool {
+	ts := c.Type().String()
+	t := removeVendor(ts)
 	return t == "github.com/rs/zerolog.Event"
 }
 
