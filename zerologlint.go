@@ -23,7 +23,8 @@ var Analyzer = &analysis.Analyzer{
 func run(pass *analysis.Pass) (interface{}, error) {
 	srcFuncs := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA).SrcFuncs
 
-	// This map holds all the ssa block that is a zerolog.Event type instance.
+	// This map holds all the ssa block that is a zerolog.Event type instance
+	// that should be dispatched.
 	// Everytime the zerolog.Event is dispatched with Msg() or Send(),
 	// deletes that block from this map.
 	// At the end, check if the set is empty, or report the not dispatched block.
@@ -34,6 +35,9 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			for _, instr := range b.Instrs {
 				if c, ok := instr.(*ssa.Call); ok {
 					v := c.Value()
+					// check if it's in github.com/rs/zerolog/log since there's some
+					// functions in github.com/rs/zerolog that returns zerolog.Event
+					// which should not be included
 					if isInLogPkg(v) {
 						if isZerologEvent(v) {
 							// check if this is a new instance of zerolog.Event like logger := log.Error()
@@ -70,7 +74,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	}
 	// At the end, if the set is clear -> ok.
 	// if the set is not clear -> there must be a left zerolog.Event var that weren't dispached.
-	// -> Report it using position.
+	// -> Report
 	for k := range set {
 		pass.Reportf(k.Pos(), "missing Msg or Send call for zerolog log method")
 	}
@@ -87,8 +91,8 @@ func isInLogPkg(c *ssa.Call) bool {
 	}
 }
 
-func isZerologEvent(c ssa.Value) bool {
-	ts := c.Type().String()
+func isZerologEvent(v ssa.Value) bool {
+	ts := v.Type().String()
 	t := removeVendor(ts)
 	return t == "github.com/rs/zerolog.Event"
 }
@@ -110,8 +114,8 @@ func isDispatchMethod(c *ssa.Call) bool {
 	return false
 }
 
-func getRootSsaValue(arg ssa.Value) ssa.Value {
-	if c, ok := arg.(*ssa.Call); ok {
+func getRootSsaValue(v ssa.Value) ssa.Value {
+	if c, ok := v.(*ssa.Call); ok {
 		v := c.Value()
 		// When there is no receiver, that's the block of zerolog.Event
 		// eg. Error() method in log.Error().Str("foo", "bar"). Send()
@@ -123,5 +127,5 @@ func getRootSsaValue(arg ssa.Value) ssa.Value {
 		// chain is zerolog.Event at this point.
 		return getRootSsaValue(v.Call.Args[0])
 	}
-	return arg
+	return v
 }
