@@ -73,10 +73,9 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		}
 	}
 	// At the end, if the set is clear -> ok.
-	// if the set is not clear -> there must be a left zerolog.Event var that weren't dispached.
-	// -> Report
+	// Otherwise, there must be a left zerolog.Event var that weren't dispached. So report it.
 	for k := range set {
-		pass.Reportf(k.Pos(), "missing Msg or Send call for zerolog log method")
+		pass.Reportf(k.Pos(), "missing to dispatch with Msg or Send function. nothing will be logged")
 	}
 	return nil, nil
 }
@@ -84,8 +83,8 @@ func run(pass *analysis.Pass) (interface{}, error) {
 func isInLogPkg(c *ssa.Call) bool {
 	switch v := c.Call.Value.(type) {
 	case ssa.Member:
-		p := removeVendor(v.Package().Pkg.Path())
-		return p == "github.com/rs/zerolog/log"
+		p := v.Package().Pkg.Path()
+		return strings.HasSuffix(p, "github.com/rs/zerolog/log")
 	default:
 		return false
 	}
@@ -94,15 +93,6 @@ func isInLogPkg(c *ssa.Call) bool {
 func isZerologEvent(v ssa.Value) bool {
 	ts := v.Type().String()
 	return strings.HasSuffix(ts, "github.com/rs/zerolog.Event")
-}
-
-// RemoVendor removes vendoring information from import path.
-func removeVendor(path string) string {
-	i := strings.Index(path, "vendor/")
-	if i >= 0 {
-		return path[i+len("vendor/"):]
-	}
-	return path
 }
 
 func isDispatchMethod(c *ssa.Call) bool {
