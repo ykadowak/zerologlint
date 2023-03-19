@@ -19,27 +19,27 @@ go vet -vettool=`which zerologlint` ./...
 package main
 
 import (
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
+    "github.com/rs/zerolog"
+    "github.com/rs/zerolog/log"
 )
 
 func main() {
     // 1. Basic case
-	log.Info() // "missing to dispatch with Msg or Send function. nothing will be logged"
+    log.Info() // "missing to dispatch with Msg or Send function. nothing will be logged"
 
     // 2. Nested case
-	log.Info(). // "missing to dispatch with Msg or Send function. nothing will be logged"
-		Str("foo", "bar").
-		Dict("dict", zerolog.Dict().
-			Str("bar", "baz").
-			Int("n", 1),
-		)
+    log.Info(). // "missing to dispatch with Msg or Send function. nothing will be logged"
+        Str("foo", "bar").
+        Dict("dict", zerolog.Dict().
+            Str("bar", "baz").
+            Int("n", 1),
+        )
 
     // 3. Reassignment case
     logger := log.Info() // "missing to dispatch with Msg or Send function. nothing will be logged"
-	if err != nil {
-		logger = log.Error() // "missing to dispatch with Msg or Send function. nothing will be logged"
-	}
-	logger.Str("foo", "bar")
+    if err != nil {
+        logger = log.Error() // "missing to dispatch with Msg or Send function. nothing will be logged"
+    }
+    logger.Str("foo", "bar")
 }
 ```
