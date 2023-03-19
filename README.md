@@ -26,10 +26,10 @@ import (
 
 func main() {
     // 1. Basic case
-    log.Info() // "missing to dispatch with Msg or Send function. nothing will be logged"
+    log.Info() // "must be dispatched by Msg or Send method"
 
     // 2. Nested case
-    log.Info(). // "missing to dispatch with Msg or Send function. nothing will be logged"
+    log.Info(). // "must be dispatched by Msg or Send method"
         Str("foo", "bar").
         Dict("dict", zerolog.Dict().
             Str("bar", "baz").
@@ -37,9 +37,9 @@ func main() {
         )
 
     // 3. Reassignment case
-    logger := log.Info() // "missing to dispatch with Msg or Send function. nothing will be logged"
+    logger := log.Info() // "must be dispatched by Msg or Send method"
     if err != nil {
-        logger = log.Error() // "missing to dispatch with Msg or Send function. nothing will be logged"
+        logger = log.Error() // "must be dispatched by Msg or Send method"
     }
     logger.Str("foo", "bar")
 }

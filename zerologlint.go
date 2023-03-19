@@ -75,7 +75,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	// At the end, if the set is clear -> ok.
 	// Otherwise, there must be a left zerolog.Event var that weren't dispached. So report it.
 	for k := range set {
-		pass.Reportf(k.Pos(), "missing to dispatch with Msg or Send function. nothing will be logged")
+		pass.Reportf(k.Pos(), "must be dispatched by Msg or Send method")
 	}
 	return nil, nil
 }
