@@ -1,4 +1,5 @@
 # zerologlint
+![build](https://github.com/ykadowak/zerologlint/actions/workflows/testing.yaml/badge.svg)
 
 `zerologlint` is a linter for [`zerolog`](https://github.com/rs/zerolog) that can be run with `go vet`.
 It detects the wrong usage of `zerolog` that a user forgets to dispatch `zerolog.Event` with `Send` or `Msg` function, in which case nothing will be logged. For more detailed explanations of the cases it detects, see [`Example`](#Example).
