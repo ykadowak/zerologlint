@@ -93,8 +93,7 @@ func isInLogPkg(c *ssa.Call) bool {
 
 func isZerologEvent(v ssa.Value) bool {
 	ts := v.Type().String()
-	t := removeVendor(ts)
-	return t == "github.com/rs/zerolog.Event"
+	return strings.HasSuffix(ts, "github.com/rs/zerolog.Event")
 }
 
 // RemoVendor removes vendoring information from import path.
