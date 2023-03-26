@@ -83,8 +83,11 @@ func run(pass *analysis.Pass) (interface{}, error) {
 func isInLogPkg(c *ssa.Call) bool {
 	switch v := c.Call.Value.(type) {
 	case ssa.Member:
-		p := v.Package().Pkg.Path()
-		return strings.HasSuffix(p, "github.com/rs/zerolog/log")
+		p := v.Package()
+		if p == nil {
+			return false
+		}
+		return strings.HasSuffix(p.Pkg.Path(), "github.com/rs/zerolog/log")
 	default:
 		return false
 	}
