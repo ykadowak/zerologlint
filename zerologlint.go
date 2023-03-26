@@ -100,7 +100,7 @@ func isZerologEvent(v ssa.Value) bool {
 
 func isDispatchMethod(c *ssa.Call) bool {
 	m := c.Common().StaticCallee().Name()
-	if m == "Send" || m == "Msg" {
+	if m == "Send" || m == "Msg" || m == "Msgf" || m == "MsgFunc" {
 		return true
 	}
 	return false

@@ -64,4 +64,8 @@ func ok() {
 		logger2 = log.Error()
 	}
 	logger2.Send()
+
+	// dispatch variation
+	log.Info().Msgf("")
+	log.Info().MsgFunc(func() string { return "foo" })
 }
