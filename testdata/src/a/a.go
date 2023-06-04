@@ -33,6 +33,19 @@ func bad() {
 		logger2 = log.Error() // want "must be dispatched by Msg or Send method"
 	}
 	logger2.Str("foo", "bar")
+
+	// defer patterns
+	defer log.Info()      // want "must be dispatched by Msg or Send method"
+
+	logger3 := log.Error() // want "must be dispatched by Msg or Send method"
+	defer logger3.Err(err).Str("foo", "bar").Int("foo", 1)
+
+	defer log.Info(). // want "must be dispatched by Msg or Send method"
+				Str("foo", "bar").
+				Dict("dict", zerolog.Dict().
+					Str("bar", "baz").
+					Int("n", 1),
+		)
 }
 
 func ok() {
@@ -68,4 +81,17 @@ func ok() {
 	// dispatch variation
 	log.Info().Msgf("")
 	log.Info().MsgFunc(func() string { return "foo" })
+
+	// defer patterns
+	defer log.Info().Msg("")
+
+	logger3 := log.Info()
+	defer logger3.Msg("")
+
+	defer log.Info().
+		Str("foo", "bar").
+		Dict("dict", zerolog.Dict().
+			Str("bar", "baz").
+			Int("n", 1),
+		).Send()
 }
