@@ -148,9 +148,8 @@ func getRootSsaValue(v ssa.Value) ssa.Value {
 
 		// Even when there is a receiver, if it's a zerolog.Logger instance, return this block
 		// eg. Info() method in zerolog.New(os.Stdout).Info()
-		// Not so sure if it's a good idea to use ssa.Alloc as a check, but it works.
 		root := v.Call.Args[0]
-		if _, ok := root.(*ssa.Alloc); ok {
+		if !isZerologEvent(root) {
 			return v
 		}
 
