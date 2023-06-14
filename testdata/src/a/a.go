@@ -1,6 +1,8 @@
 package a
 
 import (
+	"os"
+
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -46,6 +48,10 @@ func bad() {
 					Str("bar", "baz").
 					Int("n", 1),
 		)
+
+	// logger instance
+	logger4 := zerolog.New(os.Stdout)
+	logger4.Info() // want "must be dispatched by Msg or Send method"
 
 	// custom object marshaller
 	f := &Foo{Bar: &Bar{}}
@@ -99,6 +105,10 @@ func ok() {
 			Str("bar", "baz").
 			Int("n", 1),
 		).Send()
+
+	// logger instance
+	logger4 := zerolog.New(os.Stdout)
+	logger4.Info().Send()
 
 	// custom object marshaller
 	f := &Foo{Bar: &Bar{}}

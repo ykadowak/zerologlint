@@ -2,6 +2,7 @@ package zerologlint
 
 import (
 	"go/token"
+	"go/types"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -65,14 +66,11 @@ func inspect(cd callDefer, set *map[posser]struct{}) {
 
 	// check if it's in github.com/rs/zerolog/log since there's some
 	// functions in github.com/rs/zerolog that returns zerolog.Event
-	// which should not be included
-	if isInLogPkg(*c) {
+	// which should not be included. However, zerolog.Logger receiver is an exception.
+	if isInLogPkg(*c) || isLoggerRecv(*c) {
 		if isZerologEvent(c.Value) {
-			// check if this is a new instance of zerolog.Event like logger := log.Error()
-			// which should be dispatched afterwards at some point
-			if len(c.Args) == 0 {
-				(*set)[cd] = struct{}{}
-			}
+			// this ssa block should be dispatched afterwards at some point
+			(*set)[cd] = struct{}{}
 			return
 		}
 	}
@@ -106,9 +104,18 @@ func isInLogPkg(c ssa.CallCommon) bool {
 			return false
 		}
 		return strings.HasSuffix(p.Pkg.Path(), "github.com/rs/zerolog/log")
-	default:
-		return false
 	}
+	return false
+}
+
+func isLoggerRecv(c ssa.CallCommon) bool {
+	switch f := c.Value.(type) {
+	case *ssa.Function:
+		if recv := f.Signature.Recv(); recv != nil {
+			return strings.HasSuffix(types.TypeString(recv.Type(), nil), "zerolog.Logger")
+		}
+	}
+	return false
 }
 
 func isZerologEvent(v ssa.Value) bool {
@@ -132,15 +139,24 @@ func isDispatchMethod(c ssa.CallCommon) bool {
 func getRootSsaValue(v ssa.Value) ssa.Value {
 	if c, ok := v.(*ssa.Call); ok {
 		v := c.Value()
+
 		// When there is no receiver, that's the block of zerolog.Event
-		// eg. Error() method in log.Error().Str("foo", "bar"). Send()
+		// eg. Error() method in log.Error().Str("foo", "bar").Send()
 		if len(v.Call.Args) == 0 {
+			return v
+		}
+
+		// Even when there is a receiver, if it's a zerolog.Logger instance, return this block
+		// eg. Info() method in zerolog.New(os.Stdout).Info()
+		// Not so sure if it's a good idea to use ssa.Alloc as a check, but it works.
+		root := v.Call.Args[0]
+		if _, ok := root.(*ssa.Alloc); ok {
 			return v
 		}
 
 		// Ok to just return the receiver because all the method in this
 		// chain is zerolog.Event at this point.
-		return getRootSsaValue(v.Call.Args[0])
+		return getRootSsaValue(root)
 	}
 	return v
 }
