@@ -79,18 +79,19 @@ func inspect(cd callDefer, set *map[posser]struct{}) {
 	// check if the base is zerolog.Event.
 	// if so, check if the StaticCallee is Send() or Msg().
 	// if so, remove the arg[0] from the set.
+	if !isDispatchMethod(*c) {
+		return
+	}
 	for _, arg := range c.Args {
 		if isZerologEvent(arg) {
-			if isDispatchMethod(*c) {
-				val := getRootSsaValue(arg)
-				// if there's branch, remove both ways from the set
-				if phi, ok := val.(*ssa.Phi); ok {
-					for _, edge := range phi.Edges {
-						delete(*set, edge)
-					}
-				} else {
-					delete(*set, val)
+			val := getRootSsaValue(arg)
+			// if there's branch, remove both ways from the set
+			if phi, ok := val.(*ssa.Phi); ok {
+				for _, edge := range phi.Edges {
+					delete(*set, edge)
 				}
+			} else {
+				delete(*set, val)
 			}
 		}
 	}
