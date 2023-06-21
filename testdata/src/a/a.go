@@ -94,4 +94,27 @@ func ok() {
 			Str("bar", "baz").
 			Int("n", 1),
 		).Send()
+
+	// custom object marshaller
+	f := &Foo{Bar: &Bar{}}
+
+	log.Info().Object("foo", f).Msg("")
+}
+
+type Marshaller interface {
+	MarshalZerologObject(event *zerolog.Event)
+}
+
+type Foo struct {
+	Bar Marshaller
+}
+
+func (f *Foo) MarshalZerologObject(event1 *zerolog.Event) {
+	f.Bar.MarshalZerologObject(event1)
+}
+
+type Bar struct{}
+
+func (b *Bar) MarshalZerologObject(event2 *zerolog.Event) {
+	event2.Str("key", "value")
 }
