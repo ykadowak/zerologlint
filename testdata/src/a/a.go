@@ -109,12 +109,12 @@ type Foo struct {
 	Bar Marshaller
 }
 
-func (f *Foo) MarshalZerologObject(event1 *zerolog.Event) {
-	f.Bar.MarshalZerologObject(event1)
+func (f *Foo) MarshalZerologObject(event *zerolog.Event) {
+	f.Bar.MarshalZerologObject(event)
 }
 
 type Bar struct{}
 
-func (b *Bar) MarshalZerologObject(event2 *zerolog.Event) {
-	event2.Str("key", "value")
+func (b *Bar) MarshalZerologObject(event *zerolog.Event) {
+	event.Str("key", "value")
 }
