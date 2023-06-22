@@ -46,6 +46,11 @@ func bad() {
 					Str("bar", "baz").
 					Int("n", 1),
 		)
+
+	// custom object marshaller
+	f := &Foo{Bar: &Bar{}}
+
+	log.Info().Object("foo", f) // want "must be dispatched by Msg or Send method"
 }
 
 func ok() {
