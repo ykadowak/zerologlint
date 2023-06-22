@@ -46,6 +46,11 @@ func bad() {
 					Str("bar", "baz").
 					Int("n", 1),
 		)
+
+	// custom object marshaller
+	f := &Foo{Bar: &Bar{}}
+
+	log.Info().Object("foo", f) // want "must be dispatched by Msg or Send method"
 }
 
 func ok() {
@@ -94,4 +99,27 @@ func ok() {
 			Str("bar", "baz").
 			Int("n", 1),
 		).Send()
+
+	// custom object marshaller
+	f := &Foo{Bar: &Bar{}}
+
+	log.Info().Object("foo", f).Msg("")
+}
+
+type Marshaller interface {
+	MarshalZerologObject(event *zerolog.Event)
+}
+
+type Foo struct {
+	Bar Marshaller
+}
+
+func (f *Foo) MarshalZerologObject(event *zerolog.Event) {
+	f.Bar.MarshalZerologObject(event)
+}
+
+type Bar struct{}
+
+func (b *Bar) MarshalZerologObject(event *zerolog.Event) {
+	event.Str("key", "value")
 }

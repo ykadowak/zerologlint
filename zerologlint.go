@@ -117,7 +117,12 @@ func isZerologEvent(v ssa.Value) bool {
 }
 
 func isDispatchMethod(c ssa.CallCommon) bool {
-	m := c.StaticCallee().Name()
+	callee := c.StaticCallee()
+	if callee == nil {
+		return false
+	}
+
+	m := callee.Name()
 	if m == "Send" || m == "Msg" || m == "Msgf" || m == "MsgFunc" {
 		return true
 	}
