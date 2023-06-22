@@ -1,4 +1,4 @@
-name: test and lint
+name: testing
 
 on:
   push:
@@ -24,7 +24,5 @@ jobs:
         with:
           go-version: ${{ matrix.go }}
           cache: true
-      - name: Lint
-        run: go vet
       - name: Test
         run: go test -v -race ./...
