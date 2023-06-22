@@ -7,7 +7,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func bad() {
+func positives() {
 	log.Error() // want "must be dispatched by Msg or Send method"
 	log.Info()  // want "must be dispatched by Msg or Send method"
 	log.Fatal() // want "must be dispatched by Msg or Send method"
@@ -55,11 +55,14 @@ func bad() {
 
 	// custom object marshaller
 	f := &Foo{Bar: &Bar{}}
-
 	log.Info().Object("foo", f) // want "must be dispatched by Msg or Send method"
+
+	// logger instance not dispatched within other function
+	l := log.Info() // want "must be dispatched by Msg or Send method"
+	badDispatcher(l)
 }
 
-func ok() {
+func negatives() {
 	log.Fatal().Send()
 	log.Panic().Msg("")
 	log.Debug().Send()
@@ -112,8 +115,11 @@ func ok() {
 
 	// custom object marshaller
 	f := &Foo{Bar: &Bar{}}
-
 	log.Info().Object("foo", f).Msg("")
+
+	// logger instance dispatched within other function
+	l := log.Info()
+	goodDispatcher(l)
 }
 
 type Marshaller interface {
@@ -132,4 +138,12 @@ type Bar struct{}
 
 func (b *Bar) MarshalZerologObject(event *zerolog.Event) {
 	event.Str("key", "value")
+}
+
+func badDispatcher(e *zerolog.Event) {
+	e.Str("foo", "bar")
+}
+
+func goodDispatcher(e *zerolog.Event) {
+	e.Send()
 }

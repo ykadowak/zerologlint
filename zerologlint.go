@@ -79,8 +79,36 @@ func inspect(cd callDefer, set *map[posser]struct{}) {
 	// check if the base is zerolog.Event.
 	// if so, check if the StaticCallee is Send() or Msg().
 	// if so, remove the arg[0] from the set.
-	if !isDispatchMethod(*c) {
+	f := c.StaticCallee()
+	if f == nil {
 		return
+	}
+	if !isDispatchMethod(f) {
+		shouldReturn := true
+		for _, p := range f.Params {
+			if isZerologEvent(p) {
+				// check if this zerolog.Event as a parameter is dispatched in the function
+				// TODO: specifically, it can be dispatched in another function that is called in this function, and
+				//       this algorithm cannot track that. But I'm tired of thinking about that for now.
+				for _, b := range f.Blocks {
+					for _, instr := range b.Instrs {
+						switch v := instr.(type) {
+						case *ssa.Call:
+							if inspectDispatchInFunction(v.Common()) {
+								shouldReturn = false
+							}
+						case *ssa.Defer:
+							if inspectDispatchInFunction(v.Common()) {
+								shouldReturn = false
+							}
+						}
+					}
+				}
+			}
+		}
+		if shouldReturn {
+			return
+		}
 	}
 	for _, arg := range c.Args {
 		if isZerologEvent(arg) {
@@ -95,6 +123,17 @@ func inspect(cd callDefer, set *map[posser]struct{}) {
 			}
 		}
 	}
+}
+
+func inspectDispatchInFunction(cc *ssa.CallCommon) bool {
+	if isDispatchMethod(cc.StaticCallee()) {
+		for _, arg := range cc.Args {
+			if isZerologEvent(arg) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func isInLogPkg(c ssa.CallCommon) bool {
@@ -124,13 +163,11 @@ func isZerologEvent(v ssa.Value) bool {
 	return strings.HasSuffix(ts, "github.com/rs/zerolog.Event")
 }
 
-func isDispatchMethod(c ssa.CallCommon) bool {
-	callee := c.StaticCallee()
-	if callee == nil {
+func isDispatchMethod(f *ssa.Function) bool {
+	if f == nil {
 		return false
 	}
-
-	m := callee.Name()
+	m := f.Name()
 	if m == "Send" || m == "Msg" || m == "Msgf" || m == "MsgFunc" {
 		return true
 	}
