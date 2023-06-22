@@ -117,7 +117,7 @@ func negatives() {
 	f := &Foo{Bar: &Bar{}}
 	log.Info().Object("foo", f).Msg("")
 
-	// logger instance dispatched within other function
+	// zerolog.Event dispatched within other function
 	l := log.Info()
 	goodDispatcher(l)
 }
