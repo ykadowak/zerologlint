@@ -13,8 +13,8 @@ import (
 )
 
 var Analyzer = &analysis.Analyzer{
-	Name: "zerologlinter",
-	Doc:  "finds cases where zerolog methods are not followed by Msg or Send",
+	Name: "zerologlint",
+	Doc:  "Detects the wrong usage of `zerolog` that a user forgets to dispatch with `Send` or `Msg`",
 	Run:  run,
 	Requires: []*analysis.Analyzer{
 		buildssa.Analyzer,
