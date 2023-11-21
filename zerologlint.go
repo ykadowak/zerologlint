@@ -88,7 +88,7 @@ func inspect(cd callDefer, set *map[posser]struct{}) {
 		for _, p := range f.Params {
 			if isZerologEvent(p) {
 				// check if this zerolog.Event as a parameter is dispatched in the function
-				// TODO: specifically, it can be dispatched in another function that is called in this function, and
+				// TODO: technically, it can be dispatched in another function that is called in this function, and
 				//       this algorithm cannot track that. But I'm tired of thinking about that for now.
 				for _, b := range f.Blocks {
 					for _, instr := range b.Instrs {
@@ -96,10 +96,12 @@ func inspect(cd callDefer, set *map[posser]struct{}) {
 						case *ssa.Call:
 							if inspectDispatchInFunction(v.Common()) {
 								shouldReturn = false
+								break
 							}
 						case *ssa.Defer:
 							if inspectDispatchInFunction(v.Common()) {
 								shouldReturn = false
+								break
 							}
 						}
 					}
