@@ -46,9 +46,9 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		for _, b := range sf.Blocks {
 			for _, instr := range b.Instrs {
 				if c, ok := instr.(*ssa.Call); ok {
-					inspect(c, &set)
+					inspect(c, set)
 				} else if c, ok := instr.(*ssa.Defer); ok {
-					inspect(c, &set)
+					inspect(c, set)
 				}
 			}
 		}
@@ -61,7 +61,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
-func inspect(cd callDefer, set *map[posser]struct{}) {
+func inspect(cd callDefer, set map[posser]struct{}) {
 	c := cd.Common()
 
 	// check if it's in github.com/rs/zerolog/log since there's some
@@ -70,7 +70,7 @@ func inspect(cd callDefer, set *map[posser]struct{}) {
 	if isInLogPkg(*c) || isLoggerRecv(*c) {
 		if isZerologEvent(c.Value) {
 			// this ssa block should be dispatched afterwards at some point
-			(*set)[cd] = struct{}{}
+			set[cd] = struct{}{}
 			return
 		}
 	}
@@ -118,10 +118,10 @@ func inspect(cd callDefer, set *map[posser]struct{}) {
 			// if there's branch, remove both ways from the set
 			if phi, ok := val.(*ssa.Phi); ok {
 				for _, edge := range phi.Edges {
-					delete(*set, edge)
+					delete(set, edge)
 				}
 			} else {
-				delete(*set, val)
+				delete(set, val)
 			}
 		}
 	}
