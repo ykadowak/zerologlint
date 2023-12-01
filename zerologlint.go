@@ -114,13 +114,37 @@ func inspect(cd callDefer, set map[posser]struct{}) {
 	}
 	for _, arg := range c.Args {
 		if isZerologEvent(arg) {
-			val := getRootSsaValue(arg)
-			// if there's branch, remove both ways from the set
-			if phi, ok := val.(*ssa.Phi); ok {
+			// If there's branch, track both ways
+			// this is for the case like:
+			//   logger := log.Info()
+			//   if err != nil {
+			//     logger = log.Error()
+			//   }
+			//   logger.Send()
+			//
+			// Similar case like below goes to the same root but that doesn't
+			// have any side effect.
+			//   logger := log.Info()
+			//   if err != nil {
+			//     logger = logger.Str("a", "b")
+			//   }
+			//   logger.Send()
+			if phi, ok := arg.(*ssa.Phi); ok {
 				for _, edge := range phi.Edges {
-					delete(set, edge)
+					// FIXME: this is scary. Need to set a limit to the loop
+					for {
+						val := getRootSsaValue(edge)
+						if v, ok := val.(*ssa.Phi); ok {
+							edge = v.Edges[0]
+							continue
+						} else {
+							delete(set, val)
+							break
+						}
+					}
 				}
 			} else {
+				val := getRootSsaValue(arg)
 				delete(set, val)
 			}
 		}
