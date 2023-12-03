@@ -26,42 +26,65 @@ type posser interface {
 	Pos() token.Pos
 }
 
-// posser is an interface just to hold both ssa.Call and ssa.Defer in our set
+// callDefer is an interface just to hold both ssa.Call and ssa.Defer in our set
 type callDefer interface {
 	Common() *ssa.CallCommon
 	Pos() token.Pos
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
-	srcFuncs := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA).SrcFuncs
-
-	// This set holds all the ssa block that is a zerolog.Event type instance
+type linter struct {
+	// eventSet holds all the ssa block that is a zerolog.Event type instance
 	// that should be dispatched.
 	// Everytime the zerolog.Event is dispatched with Msg() or Send(),
 	// deletes that block from this set.
 	// At the end, check if the set is empty, or report the not dispatched block.
-	set := make(map[posser]struct{})
+	eventSet    map[posser]struct{}
+	// deleteLater holds the ssa block that should be deleted from eventSet after
+	// all the inspection is done.
+	// this is required because `else` ssa block comes after the dispatch of `if`` block.
+	// e.g., if err != nil { log.Error() } else { log.Info() } log.Send()
+	//       deleteLater takes care of the log.Info() block.
+	deleteLater map[posser]struct{}
+	recLimit    uint
+}
+
+func run(pass *analysis.Pass) (interface{}, error) {
+	srcFuncs := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA).SrcFuncs
+
+	l := &linter{
+		eventSet:    make(map[posser]struct{}),
+		deleteLater: make(map[posser]struct{}),
+		recLimit:    100,
+	}
 
 	for _, sf := range srcFuncs {
 		for _, b := range sf.Blocks {
 			for _, instr := range b.Instrs {
 				if c, ok := instr.(*ssa.Call); ok {
-					inspect(c, set)
+					l.inspect(c)
 				} else if c, ok := instr.(*ssa.Defer); ok {
-					inspect(c, set)
+					l.inspect(c)
 				}
 			}
 		}
 	}
+
+	// apply deleteLater to envetSet for else branches of if-else cases
+
+	for k := range l.deleteLater {
+		delete(l.eventSet, k)
+	}
+
 	// At the end, if the set is clear -> ok.
 	// Otherwise, there must be a left zerolog.Event var that weren't dispatched. So report it.
-	for k := range set {
+	for k := range l.eventSet {
 		pass.Reportf(k.Pos(), "must be dispatched by Msg or Send method")
 	}
+
 	return nil, nil
 }
 
-func inspect(cd callDefer, set map[posser]struct{}) {
+func (l *linter) inspect(cd callDefer) {
 	c := cd.Common()
 
 	// check if it's in github.com/rs/zerolog/log since there's some
@@ -70,7 +93,7 @@ func inspect(cd callDefer, set map[posser]struct{}) {
 	if isInLogPkg(*c) || isLoggerRecv(*c) {
 		if isZerologEvent(c.Value) {
 			// this ssa block should be dispatched afterwards at some point
-			set[cd] = struct{}{}
+			l.eventSet[cd] = struct{}{}
 			return
 		}
 	}
@@ -114,7 +137,7 @@ func inspect(cd callDefer, set map[posser]struct{}) {
 	}
 	for _, arg := range c.Args {
 		if isZerologEvent(arg) {
-			// If there's branch, track both ways
+			// if there's branch, track both ways
 			// this is for the case like:
 			//   logger := log.Info()
 			//   if err != nil {
@@ -131,23 +154,36 @@ func inspect(cd callDefer, set map[posser]struct{}) {
 			//   logger.Send()
 			if phi, ok := arg.(*ssa.Phi); ok {
 				for _, edge := range phi.Edges {
-					// FIXME: this is scary. Need to set a limit to the loop
-					for {
-						val := getRootSsaValue(edge)
-						if v, ok := val.(*ssa.Phi); ok {
-							edge = v.Edges[0]
-							continue
-						} else {
-							delete(set, val)
-							break
-						}
-					}
+					l.dfsEdge(edge, make(map[ssa.Value]struct{}), 0)
 				}
 			} else {
 				val := getRootSsaValue(arg)
-				delete(set, val)
+				delete(l.eventSet, val)
 			}
 		}
+	}
+}
+
+func (l *linter) dfsEdge(v ssa.Value, visit map[ssa.Value]struct{}, cnt uint) {
+	// only for safety
+	if cnt > l.recLimit {
+		return
+	}
+	cnt++
+
+	if _, ok := visit[v]; ok {
+		return
+	}
+	visit[v] = struct{}{}
+
+	val := getRootSsaValue(v)
+	phi, ok := val.(*ssa.Phi)
+	if !ok {
+		l.deleteLater[val] = struct{}{}
+		return
+	}
+	for _, edge := range phi.Edges {
+		l.dfsEdge(edge, visit, cnt)
 	}
 }
 

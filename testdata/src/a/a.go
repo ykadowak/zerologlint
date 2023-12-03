@@ -53,6 +53,18 @@ func positives() {
 	}
 	loggerCond3.Str("foo", "bar")
 
+	// conditional4
+	var event *zerolog.Event
+	if true {
+		event = log.Info() // want "must be dispatched by Msg or Send method"
+	} else {
+		event = log.Warn() // want "must be dispatched by Msg or Send method"
+	}
+	if true {
+		event = event.Err(nil)
+	}
+	event.Str("foo", "bar")
+
 	// defer patterns
 	defer log.Info() // want "must be dispatched by Msg or Send method"
 
@@ -127,6 +139,18 @@ func negatives() {
 	}
 	loggerCond3.Str("foo", "bar")
 	loggerCond3.Send()
+
+	// conditional4
+	var event *zerolog.Event
+	if true {
+		event = log.Info()
+	} else {
+		event = log.Warn()
+	}
+	if true {
+		event = event.Err(nil)
+	}
+	event.Send()
 
 	// dispatch variation
 	log.Info().Msgf("")
