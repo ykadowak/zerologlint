@@ -29,15 +29,44 @@ func positives() {
 				Int("n", 1),
 		)
 
-	// conditional
+	// conditional1
 	logger2 := log.Info() // want "must be dispatched by Msg or Send method"
 	if err != nil {
 		logger2 = log.Error() // want "must be dispatched by Msg or Send method"
 	}
 	logger2.Str("foo", "bar")
 
+	// conditional2
+	loggerCond2 := log.Info().Str("a", "b") // want "must be dispatched by Msg or Send method"
+	if err != nil {
+		loggerCond2 = loggerCond2.Str("c", "d")
+	}
+	loggerCond2.Str("foo", "bar")
+
+	// conditional3
+	loggerCond3 := log.Info().Str("a", "b") // want "must be dispatched by Msg or Send method"
+	if err != nil {
+		loggerCond3 = loggerCond3.Str("c", "d")
+	}
+	if err != nil {
+		loggerCond3 = loggerCond3.Str("e", "f")
+	}
+	loggerCond3.Str("foo", "bar")
+
+	// conditional4
+	var event *zerolog.Event
+	if true {
+		event = log.Info() // want "must be dispatched by Msg or Send method"
+	} else {
+		event = log.Warn() // want "must be dispatched by Msg or Send method"
+	}
+	if true {
+		event = event.Err(nil)
+	}
+	event.Str("foo", "bar")
+
 	// defer patterns
-	defer log.Info()      // want "must be dispatched by Msg or Send method"
+	defer log.Info() // want "must be dispatched by Msg or Send method"
 
 	logger3 := log.Error() // want "must be dispatched by Msg or Send method"
 	defer logger3.Err(err).Str("foo", "bar").Int("foo", 1)
@@ -91,6 +120,37 @@ func negatives() {
 		logger2 = log.Error()
 	}
 	logger2.Send()
+
+	// conditional2
+	loggerCond2 := log.Info().Str("a", "b")
+	if err != nil {
+		loggerCond2 = loggerCond2.Str("c", "d")
+	}
+	loggerCond2.Str("foo", "bar")
+	loggerCond2.Send()
+
+	// conditional3
+	loggerCond3 := log.Info().Str("a", "b")
+	if err != nil {
+		loggerCond3 = loggerCond3.Str("c", "d")
+	}
+	if err != nil {
+		loggerCond3 = loggerCond3.Str("e", "f")
+	}
+	loggerCond3.Str("foo", "bar")
+	loggerCond3.Send()
+
+	// conditional4
+	var event *zerolog.Event
+	if true {
+		event = log.Info()
+	} else {
+		event = log.Warn()
+	}
+	if true {
+		event = event.Err(nil)
+	}
+	event.Send()
 
 	// dispatch variation
 	log.Info().Msgf("")
