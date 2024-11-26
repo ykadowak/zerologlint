@@ -8,9 +8,6 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        go: [ '1.21' ]
 
     steps:
       - name: Check out
@@ -21,7 +18,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v3
         with:
-          go-version: ${{ matrix.go }}
+          go-version: 'stable'
           cache: true
       - name: release
         uses: goreleaser/goreleaser-action@v4
