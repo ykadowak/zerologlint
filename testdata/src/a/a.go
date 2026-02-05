@@ -180,6 +180,18 @@ func negatives() {
 	// zerolog.Event dispatched within other function
 	l := log.Info()
 	goodDispatcher(l)
+
+	// Enabled() method should be considered as dispatch
+	if !log.Trace().Enabled() {
+		return
+	}
+	log.Trace().Msg("test")
+
+	// Enabled() with variable assignment
+	enabled := log.Debug().Enabled()
+	if enabled {
+		log.Debug().Msg("debug message")
+	}
 }
 
 type Marshaller interface {

@@ -230,7 +230,7 @@ func isDispatchMethod(f *ssa.Function) bool {
 		return false
 	}
 	m := f.Name()
-	if m == "Send" || m == "Msg" || m == "Msgf" || m == "MsgFunc" {
+	if m == "Send" || m == "Msg" || m == "Msgf" || m == "MsgFunc" || m == "Enabled" {
 		return true
 	}
 	return false
