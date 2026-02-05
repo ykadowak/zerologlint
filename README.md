@@ -17,6 +17,18 @@ go vet -vettool=`which zerologlint` ./...
 
 or you can also use it with [golangci-lint](https://golangci-lint.run/) since `v1.53.0`.
 
+### Flags
+
+#### `-checkmsgf`
+
+By default, zerologlint accepts `Msgf` as a valid dispatch method. However, if you want to discourage the use of format strings in messages and encourage structured logging, you can enable the `-checkmsgf` flag:
+
+```bash
+go vet -vettool=$(which zerologlint) -zerologlint.checkmsgf ./...
+```
+
+When enabled, code like `log.Info().Msgf("error: %s", err)` will be flagged, encouraging you to use structured fields instead: `log.Info().Str("error", err.Error()).Msg("")`.
+
 ## Examples
 ```go
 package main
