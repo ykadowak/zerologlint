@@ -158,7 +158,15 @@ func (l *linter) inspect(cd callDefer) {
 				}
 			} else {
 				val := getRootSsaValue(arg)
-				delete(l.eventSet, val)
+				// getRootSsaValue might return a Phi node if the call chain
+				// contains a Phi node (e.g., phi.Str("x", "y").Msg("z"))
+				if phi, ok := val.(*ssa.Phi); ok {
+					for _, edge := range phi.Edges {
+						l.dfsEdge(edge, make(map[ssa.Value]struct{}), 0)
+					}
+				} else {
+					delete(l.eventSet, val)
+				}
 			}
 		}
 	}
