@@ -207,3 +207,12 @@ func badDispatcher(e *zerolog.Event) {
 func goodDispatcher(e *zerolog.Event) {
 	e.Send()
 }
+
+func returnsEvent() *zerolog.Event {
+	return log.Info()
+}
+
+func returnsAssignedEvent() (event *zerolog.Event) {
+	event = log.Info()
+	return
+}
