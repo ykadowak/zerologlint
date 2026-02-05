@@ -169,6 +169,12 @@ func negatives() {
 			Int("n", 1),
 		).Send()
 
+	if evt := log.Debug(); evt.Enabled() {
+		defer func() {
+			evt.Msg("server stopped")
+		}()
+	}
+
 	// logger instance
 	logger4 := zerolog.New(os.Stdout)
 	logger4.Info().Send()

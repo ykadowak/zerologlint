@@ -38,7 +38,7 @@ type linter struct {
 	// Everytime the zerolog.Event is dispatched with Msg() or Send(),
 	// deletes that block from this set.
 	// At the end, check if the set is empty, or report the not dispatched block.
-	eventSet    map[posser]struct{}
+	eventSet map[posser]struct{}
 	// deleteLater holds the ssa block that should be deleted from eventSet after
 	// all the inspection is done.
 	// this is required because `else` ssa block comes after the dispatch of `if`` block.
@@ -86,6 +86,10 @@ func run(pass *analysis.Pass) (interface{}, error) {
 
 func (l *linter) inspect(cd callDefer) {
 	c := cd.Common()
+
+	if mc, ok := c.Value.(*ssa.MakeClosure); ok {
+		l.inspectMakeClosure(mc)
+	}
 
 	// check if it's in github.com/rs/zerolog/log since there's some
 	// functions in github.com/rs/zerolog that returns zerolog.Event
@@ -237,6 +241,9 @@ func isDispatchMethod(f *ssa.Function) bool {
 }
 
 func getRootSsaValue(v ssa.Value) ssa.Value {
+	if u, ok := v.(*ssa.UnOp); ok {
+		return getRootSsaValue(u.X)
+	}
 	if c, ok := v.(*ssa.Call); ok {
 		v := c.Value()
 
@@ -258,4 +265,71 @@ func getRootSsaValue(v ssa.Value) ssa.Value {
 		return getRootSsaValue(root)
 	}
 	return v
+}
+
+func (l *linter) inspectMakeClosure(mc *ssa.MakeClosure) {
+	fn, ok := mc.Fn.(*ssa.Function)
+	if !ok {
+		return
+	}
+	dispatched := dispatchedFreeVars(fn)
+	if len(dispatched) == 0 {
+		return
+	}
+	for i, fv := range fn.FreeVars {
+		if _, ok := dispatched[fv]; !ok {
+			continue
+		}
+		if i < len(mc.Bindings) {
+			l.deleteEventForBinding(mc.Bindings[i])
+		}
+	}
+}
+
+func dispatchedFreeVars(fn *ssa.Function) map[*ssa.FreeVar]struct{} {
+	result := make(map[*ssa.FreeVar]struct{})
+	if fn == nil {
+		return result
+	}
+	for _, b := range fn.Blocks {
+		for _, instr := range b.Instrs {
+			var cc *ssa.CallCommon
+			switch v := instr.(type) {
+			case *ssa.Call:
+				cc = v.Common()
+			case *ssa.Defer:
+				cc = v.Common()
+			default:
+				continue
+			}
+			if !isDispatchMethod(cc.StaticCallee()) {
+				continue
+			}
+			for _, arg := range cc.Args {
+				root := getRootSsaValue(arg)
+				if fv, ok := root.(*ssa.FreeVar); ok && isZerologEvent(fv) {
+					result[fv] = struct{}{}
+				}
+			}
+		}
+	}
+	return result
+}
+
+func (l *linter) deleteEventForBinding(binding ssa.Value) {
+	root := getRootSsaValue(binding)
+	delete(l.eventSet, root)
+
+	if refs := binding.Referrers(); refs != nil {
+		for _, r := range *refs {
+			s, ok := r.(*ssa.Store)
+			if !ok {
+				continue
+			}
+			if s.Addr != binding || !isZerologEvent(s.Val) {
+				continue
+			}
+			delete(l.eventSet, getRootSsaValue(s.Val))
+		}
+	}
 }
