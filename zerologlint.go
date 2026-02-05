@@ -1,6 +1,7 @@
 package zerologlint
 
 import (
+	"flag"
 	"go/token"
 	"go/types"
 	"strings"
@@ -12,6 +13,14 @@ import (
 	"github.com/gostaticanalysis/comment/passes/commentmap"
 )
 
+var (
+	flagCheckMsgf bool
+)
+
+func init() {
+	Analyzer.Flags.BoolVar(&flagCheckMsgf, "checkmsgf", false, "check for usage of Msgf (format strings)")
+}
+
 var Analyzer = &analysis.Analyzer{
 	Name: "zerologlint",
 	Doc:  "Detects the wrong usage of `zerolog` that a user forgets to dispatch with `Send` or `Msg`",
@@ -20,6 +29,7 @@ var Analyzer = &analysis.Analyzer{
 		buildssa.Analyzer,
 		commentmap.Analyzer,
 	},
+	Flags: flag.FlagSet{},
 }
 
 type posser interface {
@@ -230,7 +240,11 @@ func isDispatchMethod(f *ssa.Function) bool {
 		return false
 	}
 	m := f.Name()
-	if m == "Send" || m == "Msg" || m == "Msgf" || m == "MsgFunc" {
+	if m == "Send" || m == "Msg" || m == "MsgFunc" {
+		return true
+	}
+	// When flagCheckMsgf is enabled, Msgf should NOT be considered a valid dispatch method
+	if m == "Msgf" && !flagCheckMsgf {
 		return true
 	}
 	return false
