@@ -19,8 +19,9 @@ func MyGoodHandler(w http.ResponseWriter, r *http.Request) {
 		Msg("request received")
 }
 
-func MyBadHandler(w http.ResponseWriter, r *http.Request) {
+func MyGoodHandlerWithChainedCalls(w http.ResponseWriter, r *http.Request) {
 	// This used to trigger a false positive before the fix
+	// The event is properly dispatched even though it's chained after conditional reassignment
 	evt := log.Ctx(r.Context()).Debug()
 	if resource := r.Header.Get("x-resource"); resource != "" {
 		evt = evt.Str("resource", resource)
@@ -43,8 +44,7 @@ func conditionalWithChainedDispatch1() {
 
 func conditionalWithChainedDispatch2() {
 	evt := log.Info()
-	var err error
-	if err != nil {
+	if true {
 		evt = evt.Str("error", "yes")
 	}
 	evt.Str("status", "ok").Msg("done")
