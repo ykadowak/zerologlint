@@ -184,12 +184,12 @@ func (l *linter) inspect(cd callDefer) {
 					for _, instr := range b.Instrs {
 						switch v := instr.(type) {
 						case *ssa.Call:
-							if inspectDispatchInFunction(v.Common()) {
+							if inspectDispatchInFunction(v.Common(), l.prefixes) {
 								shouldReturn = false
 								break
 							}
 						case *ssa.Defer:
-							if inspectDispatchInFunction(v.Common()) {
+							if inspectDispatchInFunction(v.Common(), l.prefixes) {
 								shouldReturn = false
 								break
 							}
@@ -224,7 +224,7 @@ func (l *linter) inspect(cd callDefer) {
 					l.dfsEdge(edge, make(map[ssa.Value]struct{}), 0)
 				}
 			} else {
-				val := getRootSsaValue(arg)
+				val := getRootSsaValue(arg, l.prefixes)
 				delete(l.eventSet, val)
 			}
 		}
@@ -243,7 +243,7 @@ func (l *linter) dfsEdge(v ssa.Value, visit map[ssa.Value]struct{}, cnt uint) {
 	}
 	visit[v] = struct{}{}
 
-	val := getRootSsaValue(v)
+	val := getRootSsaValue(v, l.prefixes)
 	phi, ok := val.(*ssa.Phi)
 	if !ok {
 		l.deleteLater[val] = struct{}{}
@@ -254,10 +254,10 @@ func (l *linter) dfsEdge(v ssa.Value, visit map[ssa.Value]struct{}, cnt uint) {
 	}
 }
 
-func inspectDispatchInFunction(cc *ssa.CallCommon) bool {
+func inspectDispatchInFunction(cc *ssa.CallCommon, prefixes []string) bool {
 	if isDispatchMethod(cc.StaticCallee()) {
 		for _, arg := range cc.Args {
-			if isZerologEventAny(arg) {
+			if isZerologEventForPrefixes(arg, prefixes) {
 				return true
 			}
 		}
@@ -307,10 +307,15 @@ func (l *linter) isZerologEvent(v ssa.Value) bool {
 	return false
 }
 
-// isZerologEventAny checks if a value is a zerolog Event from any path (used in dispatch checks).
-func isZerologEventAny(v ssa.Value) bool {
+// isZerologEventForPrefixes checks whether v's type is a zerolog Event for any of the given prefixes.
+func isZerologEventForPrefixes(v ssa.Value, prefixes []string) bool {
 	ts := v.Type().String()
-	return strings.Contains(ts, ".Event")
+	for _, prefix := range prefixes {
+		if strings.HasSuffix(ts, prefix+".Event") {
+			return true
+		}
+	}
+	return false
 }
 
 func isDispatchMethod(f *ssa.Function) bool {
@@ -324,7 +329,7 @@ func isDispatchMethod(f *ssa.Function) bool {
 	return false
 }
 
-func getRootSsaValue(v ssa.Value) ssa.Value {
+func getRootSsaValue(v ssa.Value, prefixes []string) ssa.Value {
 	if c, ok := v.(*ssa.Call); ok {
 		v := c.Value()
 
@@ -337,13 +342,13 @@ func getRootSsaValue(v ssa.Value) ssa.Value {
 		// Even when there is a receiver, if it's a zerolog.Logger instance, return this block
 		// eg. Info() method in zerolog.New(os.Stdout).Info()
 		root := v.Call.Args[0]
-		if !isZerologEventAny(root) {
+		if !isZerologEventForPrefixes(root, prefixes) {
 			return v
 		}
 
 		// Ok to just return the receiver because all the method in this
 		// chain is zerolog.Event at this point.
-		return getRootSsaValue(root)
+		return getRootSsaValue(root, prefixes)
 	}
 	return v
 }
