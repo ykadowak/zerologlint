@@ -78,13 +78,3 @@ go vet -vettool=`which zerologlint` -zerologlint.prefix=myorg/myzerolog ./...
 go vet -vettool=`which zerologlint` -zerologlint.prefix=myorg/myzerolog,other/zerolog ./...
 ```
 
-### Using golangci-lint (plugin mode)
-
-When building a golangci-lint plugin, pass flags via `ldflags`:
-
-```bash
-go build -buildmode=plugin \
-  -ldflags "-X 'main.flags=-prefix myorg/myzerolog'" \
-  github.com/ykadowak/zerologlint/plugin/zerologlint
-```
-
