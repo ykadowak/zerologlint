@@ -13,20 +13,18 @@ import (
 	"github.com/gostaticanalysis/comment/passes/commentmap"
 )
 
-const defaultZerologPath = "github.com/rs/zerolog"
-
 // Settings holds the configurable options for the zerologlint analyzer.
 type Settings struct {
-	// AdditionalPrefixes is the list of module path prefixes that are treated as zerolog.
-	// The default prefix github.com/rs/zerolog is always included.
-	// AdditionalPrefixes allows specifying mirrors or forks of zerolog.
+	// AdditionalPrefixes is the list of module path prefixes that are treated as zerolog
+	// in addition to the default "github.com/rs/zerolog".
+	// Use this to support zerolog forks or mirrors.
 	AdditionalPrefixes []string
 }
 
 var Analyzer = &analysis.Analyzer{
 	Name: "zerologlint",
 	Doc:  "Detects the wrong usage of `zerolog` that a user forgets to dispatch with `Send` or `Msg`",
-	Run:  run,
+	Run:  func(pass *analysis.Pass) (interface{}, error) { return run(pass) },
 	Requires: []*analysis.Analyzer{
 		buildssa.Analyzer,
 		commentmap.Analyzer,
@@ -43,12 +41,11 @@ func init() {
 func NewAnalyzerForSettings(settings Settings) *analysis.Analyzer {
 	a := &analysis.Analyzer{
 		Name: "zerologlint",
-		Doc:  "Detects the wrong usage of `zerolog` that a user forgets to dispatch with `Send` or `Msg`",
-		Run:  newRunner(settings),
-		Requires: []*analysis.Analyzer{
-			buildssa.Analyzer,
-			commentmap.Analyzer,
+		Doc:  Analyzer.Doc,
+		Run: func(pass *analysis.Pass) (interface{}, error) {
+			return run(pass, settings.AdditionalPrefixes...)
 		},
+		Requires: Analyzer.Requires,
 	}
 	a.Flags.Init("zerologlint", flag.ContinueOnError)
 	return a
@@ -78,84 +75,62 @@ type linter struct {
 	//       deleteLater takes care of the log.Info() block.
 	deleteLater map[posser]struct{}
 	recLimit    uint
-	// prefixes is the combined list of module path prefixes to match against.
-	// It always contains defaultZerologPath and any additional prefixes from Settings or flags.
-	prefixes []string
+	prefixes    []string
 }
 
-// resolvePrefixes builds the final list of prefixes from the analyzer flags and the provided additional list.
-func resolvePrefixes(pass *analysis.Pass, extra []string) []string {
-	prefixes := []string{defaultZerologPath}
+func run(pass *analysis.Pass, additionalPrefixes ...string) (interface{}, error) {
+	srcFuncs := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA).SrcFuncs
 
-	// Merge additional prefixes from Settings (programmatic API).
-	for _, p := range extra {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			prefixes = append(prefixes, p)
-		}
-	}
-
-	// Merge additional prefixes from -prefix flag (CLI / golangci-lint flags).
+	prefixes := []string{"github.com/rs/zerolog"}
+	prefixes = append(prefixes, additionalPrefixes...)
+	// also pick up prefixes from the -prefix flag (CLI / golangci-lint plugin flags)
 	if ff := pass.Analyzer.Flags.Lookup("prefix"); ff != nil {
 		for _, p := range strings.Split(ff.Value.String(), ",") {
-			p = strings.TrimSpace(p)
-			if p != "" {
+			if p = strings.TrimSpace(p); p != "" {
 				prefixes = append(prefixes, p)
 			}
 		}
 	}
 
-	return prefixes
-}
+	l := &linter{
+		eventSet:    make(map[posser]struct{}),
+		deleteLater: make(map[posser]struct{}),
+		recLimit:    100,
+		prefixes:    prefixes,
+	}
 
-func run(pass *analysis.Pass) (interface{}, error) {
-	return newRunner(Settings{})(pass)
-}
-
-func newRunner(settings Settings) func(pass *analysis.Pass) (interface{}, error) {
-	return func(pass *analysis.Pass) (interface{}, error) {
-		srcFuncs := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA).SrcFuncs
-
-		l := &linter{
-			eventSet:    make(map[posser]struct{}),
-			deleteLater: make(map[posser]struct{}),
-			recLimit:    100,
-			prefixes:    resolvePrefixes(pass, settings.AdditionalPrefixes),
-		}
-
-		for _, sf := range srcFuncs {
-			for _, b := range sf.Blocks {
-				for _, instr := range b.Instrs {
-					if c, ok := instr.(*ssa.Call); ok {
-						l.inspect(c)
-					} else if c, ok := instr.(*ssa.Defer); ok {
-						l.inspect(c)
-					}
+	for _, sf := range srcFuncs {
+		for _, b := range sf.Blocks {
+			for _, instr := range b.Instrs {
+				if c, ok := instr.(*ssa.Call); ok {
+					l.inspect(c)
+				} else if c, ok := instr.(*ssa.Defer); ok {
+					l.inspect(c)
 				}
 			}
 		}
-
-		// apply deleteLater to envetSet for else branches of if-else cases
-
-		for k := range l.deleteLater {
-			delete(l.eventSet, k)
-		}
-
-		// At the end, if the set is clear -> ok.
-		// Otherwise, there must be a left zerolog.Event var that weren't dispatched. So report it.
-		for k := range l.eventSet {
-			pass.Reportf(k.Pos(), "must be dispatched by Msg or Send method")
-		}
-
-		return nil, nil
 	}
+
+	// apply deleteLater to envetSet for else branches of if-else cases
+
+	for k := range l.deleteLater {
+		delete(l.eventSet, k)
+	}
+
+	// At the end, if the set is clear -> ok.
+	// Otherwise, there must be a left zerolog.Event var that weren't dispatched. So report it.
+	for k := range l.eventSet {
+		pass.Reportf(k.Pos(), "must be dispatched by Msg or Send method")
+	}
+
+	return nil, nil
 }
 
 func (l *linter) inspect(cd callDefer) {
 	c := cd.Common()
 
-	// check if it's in the log package of any of the configured zerolog prefixes
-	// since there's some functions in the packages that return zerolog.Event
+	// check if it's in github.com/rs/zerolog/log since there's some
+	// functions in github.com/rs/zerolog that returns zerolog.Event
 	// which should not be included. However, zerolog.Logger receiver is an exception.
 	if l.isInLogPkg(*c) || l.isLoggerRecv(*c) {
 		if l.isZerologEvent(c.Value) {
@@ -179,17 +154,17 @@ func (l *linter) inspect(cd callDefer) {
 			if l.isZerologEvent(p) {
 				// check if this zerolog.Event as a parameter is dispatched in the function
 				// TODO: technically, it can be dispatched in another function that is called in this function, and
-				//       this algorithm cannot trace that. But I'm tired of thinking about that for now.
+				//       this algorithm cannot track that. But I'm tired of thinking about that for now.
 				for _, b := range f.Blocks {
 					for _, instr := range b.Instrs {
 						switch v := instr.(type) {
 						case *ssa.Call:
-							if inspectDispatchInFunction(v.Common(), l.prefixes) {
+							if l.inspectDispatchInFunction(v.Common()) {
 								shouldReturn = false
 								break
 							}
 						case *ssa.Defer:
-							if inspectDispatchInFunction(v.Common(), l.prefixes) {
+							if l.inspectDispatchInFunction(v.Common()) {
 								shouldReturn = false
 								break
 							}
@@ -224,7 +199,7 @@ func (l *linter) inspect(cd callDefer) {
 					l.dfsEdge(edge, make(map[ssa.Value]struct{}), 0)
 				}
 			} else {
-				val := getRootSsaValue(arg, l.prefixes)
+				val := l.getRootSsaValue(arg)
 				delete(l.eventSet, val)
 			}
 		}
@@ -243,7 +218,7 @@ func (l *linter) dfsEdge(v ssa.Value, visit map[ssa.Value]struct{}, cnt uint) {
 	}
 	visit[v] = struct{}{}
 
-	val := getRootSsaValue(v, l.prefixes)
+	val := l.getRootSsaValue(v)
 	phi, ok := val.(*ssa.Phi)
 	if !ok {
 		l.deleteLater[val] = struct{}{}
@@ -254,10 +229,10 @@ func (l *linter) dfsEdge(v ssa.Value, visit map[ssa.Value]struct{}, cnt uint) {
 	}
 }
 
-func inspectDispatchInFunction(cc *ssa.CallCommon, prefixes []string) bool {
+func (l *linter) inspectDispatchInFunction(cc *ssa.CallCommon) bool {
 	if isDispatchMethod(cc.StaticCallee()) {
 		for _, arg := range cc.Args {
-			if isZerologEventForPrefixes(arg, prefixes) {
+			if l.isZerologEvent(arg) {
 				return true
 			}
 		}
@@ -272,9 +247,8 @@ func (l *linter) isInLogPkg(c ssa.CallCommon) bool {
 		if p == nil {
 			return false
 		}
-		pkgPath := p.Pkg.Path()
 		for _, prefix := range l.prefixes {
-			if strings.HasSuffix(pkgPath, prefix+"/log") {
+			if strings.HasSuffix(p.Pkg.Path(), prefix+"/log") {
 				return true
 			}
 		}
@@ -307,17 +281,6 @@ func (l *linter) isZerologEvent(v ssa.Value) bool {
 	return false
 }
 
-// isZerologEventForPrefixes checks whether v's type is a zerolog Event for any of the given prefixes.
-func isZerologEventForPrefixes(v ssa.Value, prefixes []string) bool {
-	ts := v.Type().String()
-	for _, prefix := range prefixes {
-		if strings.HasSuffix(ts, prefix+".Event") {
-			return true
-		}
-	}
-	return false
-}
-
 func isDispatchMethod(f *ssa.Function) bool {
 	if f == nil {
 		return false
@@ -329,7 +292,7 @@ func isDispatchMethod(f *ssa.Function) bool {
 	return false
 }
 
-func getRootSsaValue(v ssa.Value, prefixes []string) ssa.Value {
+func (l *linter) getRootSsaValue(v ssa.Value) ssa.Value {
 	if c, ok := v.(*ssa.Call); ok {
 		v := c.Value()
 
@@ -342,13 +305,13 @@ func getRootSsaValue(v ssa.Value, prefixes []string) ssa.Value {
 		// Even when there is a receiver, if it's a zerolog.Logger instance, return this block
 		// eg. Info() method in zerolog.New(os.Stdout).Info()
 		root := v.Call.Args[0]
-		if !isZerologEventForPrefixes(root, prefixes) {
+		if !l.isZerologEvent(root) {
 			return v
 		}
 
 		// Ok to just return the receiver because all the method in this
 		// chain is zerolog.Event at this point.
-		return getRootSsaValue(root, prefixes)
+		return l.getRootSsaValue(root)
 	}
 	return v
 }
