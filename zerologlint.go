@@ -1,6 +1,7 @@
 package zerologlint
 
 import (
+	"flag"
 	"go/token"
 	"go/types"
 	"strings"
@@ -20,6 +21,11 @@ var Analyzer = &analysis.Analyzer{
 		buildssa.Analyzer,
 		commentmap.Analyzer,
 	},
+}
+
+func init() {
+	Analyzer.Flags.Init("zerologlint", flag.ContinueOnError)
+	Analyzer.Flags.String("prefix", "", "comma-separated list of additional module path prefixes to treat as zerolog (e.g., myorg/myzerolog)")
 }
 
 type posser interface {
@@ -46,15 +52,26 @@ type linter struct {
 	//       deleteLater takes care of the log.Info() block.
 	deleteLater map[posser]struct{}
 	recLimit    uint
+	prefixes    []string
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
 	srcFuncs := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA).SrcFuncs
 
+	prefixes := []string{"github.com/rs/zerolog"}
+	if ff := pass.Analyzer.Flags.Lookup("prefix"); ff != nil {
+		for _, p := range strings.Split(ff.Value.String(), ",") {
+			if p = strings.TrimSpace(p); p != "" {
+				prefixes = append(prefixes, p)
+			}
+		}
+	}
+
 	l := &linter{
 		eventSet:    make(map[posser]struct{}),
 		deleteLater: make(map[posser]struct{}),
 		recLimit:    100,
+		prefixes:    prefixes,
 	}
 
 	for _, sf := range srcFuncs {
@@ -90,8 +107,8 @@ func (l *linter) inspect(cd callDefer) {
 	// check if it's in github.com/rs/zerolog/log since there's some
 	// functions in github.com/rs/zerolog that returns zerolog.Event
 	// which should not be included. However, zerolog.Logger receiver is an exception.
-	if isInLogPkg(*c) || isLoggerRecv(*c) {
-		if isZerologEvent(c.Value) {
+	if l.isInLogPkg(*c) || l.isLoggerRecv(*c) {
+		if l.isZerologEvent(c.Value) {
 			// this ssa block should be dispatched afterwards at some point
 			l.eventSet[cd] = struct{}{}
 			return
@@ -109,7 +126,7 @@ func (l *linter) inspect(cd callDefer) {
 	if !isDispatchMethod(f) {
 		shouldReturn := true
 		for _, p := range f.Params {
-			if isZerologEvent(p) {
+			if l.isZerologEvent(p) {
 				// check if this zerolog.Event as a parameter is dispatched in the function
 				// TODO: technically, it can be dispatched in another function that is called in this function, and
 				//       this algorithm cannot track that. But I'm tired of thinking about that for now.
@@ -117,12 +134,12 @@ func (l *linter) inspect(cd callDefer) {
 					for _, instr := range b.Instrs {
 						switch v := instr.(type) {
 						case *ssa.Call:
-							if inspectDispatchInFunction(v.Common()) {
+							if l.inspectDispatchInFunction(v.Common()) {
 								shouldReturn = false
 								break
 							}
 						case *ssa.Defer:
-							if inspectDispatchInFunction(v.Common()) {
+							if l.inspectDispatchInFunction(v.Common()) {
 								shouldReturn = false
 								break
 							}
@@ -136,7 +153,7 @@ func (l *linter) inspect(cd callDefer) {
 		}
 	}
 	for _, arg := range c.Args {
-		if isZerologEvent(arg) {
+		if l.isZerologEvent(arg) {
 			// if there's branch, track both ways
 			// this is for the case like:
 			//   logger := log.Info()
@@ -157,7 +174,7 @@ func (l *linter) inspect(cd callDefer) {
 					l.dfsEdge(edge, make(map[ssa.Value]struct{}), 0)
 				}
 			} else {
-				val := getRootSsaValue(arg)
+				val := l.getRootSsaValue(arg)
 				delete(l.eventSet, val)
 			}
 		}
@@ -176,7 +193,7 @@ func (l *linter) dfsEdge(v ssa.Value, visit map[ssa.Value]struct{}, cnt uint) {
 	}
 	visit[v] = struct{}{}
 
-	val := getRootSsaValue(v)
+	val := l.getRootSsaValue(v)
 	phi, ok := val.(*ssa.Phi)
 	if !ok {
 		l.deleteLater[val] = struct{}{}
@@ -187,10 +204,10 @@ func (l *linter) dfsEdge(v ssa.Value, visit map[ssa.Value]struct{}, cnt uint) {
 	}
 }
 
-func inspectDispatchInFunction(cc *ssa.CallCommon) bool {
+func (l *linter) inspectDispatchInFunction(cc *ssa.CallCommon) bool {
 	if isDispatchMethod(cc.StaticCallee()) {
 		for _, arg := range cc.Args {
-			if isZerologEvent(arg) {
+			if l.isZerologEvent(arg) {
 				return true
 			}
 		}
@@ -198,31 +215,45 @@ func inspectDispatchInFunction(cc *ssa.CallCommon) bool {
 	return false
 }
 
-func isInLogPkg(c ssa.CallCommon) bool {
+func (l *linter) isInLogPkg(c ssa.CallCommon) bool {
 	switch v := c.Value.(type) {
 	case ssa.Member:
 		p := v.Package()
 		if p == nil {
 			return false
 		}
-		return strings.HasSuffix(p.Pkg.Path(), "github.com/rs/zerolog/log")
-	}
-	return false
-}
-
-func isLoggerRecv(c ssa.CallCommon) bool {
-	switch f := c.Value.(type) {
-	case *ssa.Function:
-		if recv := f.Signature.Recv(); recv != nil {
-			return strings.HasSuffix(types.TypeString(recv.Type(), nil), "zerolog.Logger")
+		for _, prefix := range l.prefixes {
+			if strings.HasSuffix(p.Pkg.Path(), prefix+"/log") {
+				return true
+			}
 		}
 	}
 	return false
 }
 
-func isZerologEvent(v ssa.Value) bool {
+func (l *linter) isLoggerRecv(c ssa.CallCommon) bool {
+	switch f := c.Value.(type) {
+	case *ssa.Function:
+		if recv := f.Signature.Recv(); recv != nil {
+			ts := types.TypeString(recv.Type(), nil)
+			for _, prefix := range l.prefixes {
+				if strings.HasSuffix(ts, prefix+".Logger") {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func (l *linter) isZerologEvent(v ssa.Value) bool {
 	ts := v.Type().String()
-	return strings.HasSuffix(ts, "github.com/rs/zerolog.Event")
+	for _, prefix := range l.prefixes {
+		if strings.HasSuffix(ts, prefix+".Event") {
+			return true
+		}
+	}
+	return false
 }
 
 func isDispatchMethod(f *ssa.Function) bool {
@@ -236,7 +267,7 @@ func isDispatchMethod(f *ssa.Function) bool {
 	return false
 }
 
-func getRootSsaValue(v ssa.Value) ssa.Value {
+func (l *linter) getRootSsaValue(v ssa.Value) ssa.Value {
 	if c, ok := v.(*ssa.Call); ok {
 		v := c.Value()
 
@@ -249,13 +280,13 @@ func getRootSsaValue(v ssa.Value) ssa.Value {
 		// Even when there is a receiver, if it's a zerolog.Logger instance, return this block
 		// eg. Info() method in zerolog.New(os.Stdout).Info()
 		root := v.Call.Args[0]
-		if !isZerologEvent(root) {
+		if !l.isZerologEvent(root) {
 			return v
 		}
 
 		// Ok to just return the receiver because all the method in this
 		// chain is zerolog.Event at this point.
-		return getRootSsaValue(root)
+		return l.getRootSsaValue(root)
 	}
 	return v
 }

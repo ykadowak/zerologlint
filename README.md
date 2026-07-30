@@ -61,3 +61,20 @@ func dispatcher(e *zerolog.Event) {
     e.Send()
 }
 ```
+
+## Custom Module Paths (zerolog forks/mirrors)
+
+By default, `zerologlint` only inspects code that uses `github.com/rs/zerolog`.
+If your project uses a fork or mirror of zerolog under a different module path, you can configure
+additional module path prefixes.
+
+### Using `go vet` / CLI flag
+
+Pass the `-zerologlint.prefix` flag with a comma-separated list of additional prefixes:
+
+```bash
+go vet -vettool=`which zerologlint` -zerologlint.prefix=myorg/myzerolog ./...
+# multiple prefixes:
+go vet -vettool=`which zerologlint` -zerologlint.prefix=myorg/myzerolog,other/zerolog ./...
+```
+
