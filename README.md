@@ -88,14 +88,3 @@ go build -buildmode=plugin \
   github.com/ykadowak/zerologlint/plugin/zerologlint
 ```
 
-### Programmatic API (golangci-lint custom linter integrations)
-
-Use `NewAnalyzerForSettings` to create an analyzer with settings provided programmatically:
-
-```go
-import "github.com/ykadowak/zerologlint"
-
-analyzer := zerologlint.NewAnalyzerForSettings(zerologlint.Settings{
-    AdditionalPrefixes: []string{"myorg/myzerolog"},
-})
-```

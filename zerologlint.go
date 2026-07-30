@@ -13,18 +13,10 @@ import (
 	"github.com/gostaticanalysis/comment/passes/commentmap"
 )
 
-// Settings holds the configurable options for the zerologlint analyzer.
-type Settings struct {
-	// AdditionalPrefixes is the list of module path prefixes that are treated as zerolog
-	// in addition to the default "github.com/rs/zerolog".
-	// Use this to support zerolog forks or mirrors.
-	AdditionalPrefixes []string
-}
-
 var Analyzer = &analysis.Analyzer{
 	Name: "zerologlint",
 	Doc:  "Detects the wrong usage of `zerolog` that a user forgets to dispatch with `Send` or `Msg`",
-	Run:  func(pass *analysis.Pass) (interface{}, error) { return run(pass) },
+	Run:  run,
 	Requires: []*analysis.Analyzer{
 		buildssa.Analyzer,
 		commentmap.Analyzer,
@@ -34,21 +26,6 @@ var Analyzer = &analysis.Analyzer{
 func init() {
 	Analyzer.Flags.Init("zerologlint", flag.ContinueOnError)
 	Analyzer.Flags.String("prefix", "", "comma-separated list of additional module path prefixes to treat as zerolog (e.g., myorg/myzerolog)")
-}
-
-// NewAnalyzerForSettings returns a new Analyzer pre-configured with the given Settings.
-// This is primarily used by golangci integrations that pass configuration programmatically.
-func NewAnalyzerForSettings(settings Settings) *analysis.Analyzer {
-	a := &analysis.Analyzer{
-		Name: "zerologlint",
-		Doc:  Analyzer.Doc,
-		Run: func(pass *analysis.Pass) (interface{}, error) {
-			return run(pass, settings.AdditionalPrefixes...)
-		},
-		Requires: Analyzer.Requires,
-	}
-	a.Flags.Init("zerologlint", flag.ContinueOnError)
-	return a
 }
 
 type posser interface {
@@ -78,12 +55,10 @@ type linter struct {
 	prefixes    []string
 }
 
-func run(pass *analysis.Pass, additionalPrefixes ...string) (interface{}, error) {
+func run(pass *analysis.Pass) (interface{}, error) {
 	srcFuncs := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA).SrcFuncs
 
 	prefixes := []string{"github.com/rs/zerolog"}
-	prefixes = append(prefixes, additionalPrefixes...)
-	// also pick up prefixes from the -prefix flag (CLI / golangci-lint plugin flags)
 	if ff := pass.Analyzer.Flags.Lookup("prefix"); ff != nil {
 		for _, p := range strings.Split(ff.Value.String(), ",") {
 			if p = strings.TrimSpace(p); p != "" {

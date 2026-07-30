@@ -14,12 +14,12 @@ func TestAnalyzer(t *testing.T) {
 	analysistest.Run(t, testdata, zerologlint.Analyzer, "a")
 }
 
-// TestAnalyzerWithAdditionalPrefix tests that the analyzer correctly handles
-// a custom zerolog fork specified via AdditionalPrefixes in Settings.
+// TestAnalyzerWithAdditionalPrefix tests that the -prefix flag correctly extends
+// the analyzer to handle a zerolog fork under a custom module path.
 func TestAnalyzerWithAdditionalPrefix(t *testing.T) {
-	a := zerologlint.NewAnalyzerForSettings(zerologlint.Settings{
-		AdditionalPrefixes: []string{"myfork/myzerolog"},
-	})
+	a := *zerologlint.Analyzer
+	a.Flags.Init("zerologlint", 0)
+	a.Flags.Set("prefix", "myfork/myzerolog")
 	testdata := testutil.WithModules(t, analysistest.TestData(), nil)
-	analysistest.Run(t, testdata, a, "b")
+	analysistest.Run(t, testdata, &a, "b")
 }
